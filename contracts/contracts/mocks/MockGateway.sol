@@ -24,6 +24,35 @@ contract MockGateway is IGatewayZEVM {
         RevertOptions revertOptions
     );
 
+    // Store the ChainWeave contract for callbacks
+    address public chainWeaveContract;
+
+    function setChainWeaveContract(address _chainWeave) external {
+        chainWeaveContract = _chainWeave;
+    }
+
+    // Helper function for testing - allows simulation of callbacks
+    function simulateCallback(
+        MessageContext calldata context,
+        address zrc20,
+        uint256 amount,
+        bytes calldata message
+    ) external {
+        require(chainWeaveContract != address(0), "ChainWeave not set");
+
+        // Call back to ChainWeave
+        (bool success, ) = chainWeaveContract.call(
+            abi.encodeWithSignature(
+                "onCall((bytes,address,uint256),address,uint256,bytes)",
+                context,
+                zrc20,
+                amount,
+                message
+            )
+        );
+        require(success, "Callback failed");
+    }
+
     function call(
         bytes memory receiver,
         address zrc20,
@@ -32,6 +61,7 @@ contract MockGateway is IGatewayZEVM {
         RevertOptions calldata revertOptions
     ) external override {
         emit MockCall(receiver, zrc20, message, callOptions, revertOptions);
+        // Simple mock - just emit the event, don't do callbacks
     }
 
     function withdraw(
