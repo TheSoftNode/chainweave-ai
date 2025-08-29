@@ -20,7 +20,7 @@ describe("ChainWeave Integration Tests", function () {
 
     // Deploy ChainWeave contract
     const ChainWeave = await ethers.getContractFactory("ChainWeave");
-    const chainWeave = await ChainWeave.deploy(mockGateway.address, owner.address);
+    const chainWeave = await ChainWeave.deploy(owner.address, user1.address); // owner as gateway for testing, user1 as backend service
 
     // Deploy CrossChainMinter contracts for different chains
     const CrossChainMinter = await ethers.getContractFactory("CrossChainMinter");
@@ -42,6 +42,13 @@ describe("ChainWeave Integration Tests", function () {
     // Configure chain minters in ChainWeave
     await chainWeave.addSupportedChain(11155111, ethMinter.address); // Ethereum Sepolia
     await chainWeave.addSupportedChain(84532, baseMinter.address);   // Base Sepolia
+
+    // Set backend service for AI completion
+    await chainWeave.setBackendService(user1.address);
+
+    // Configure minter contracts to allow ChainWeave calls
+    await ethMinter.setChainWeaveContract(chainWeave.address);
+    await baseMinter.setChainWeaveContract(chainWeave.address);
 
     return { 
       chainWeave, 
@@ -99,22 +106,28 @@ describe("ChainWeave Integration Tests", function () {
       // Step 3: Simulate AI generation completion
       console.log("Step 3: Simulating AI generation completion...");
       const tokenURI = "https://api.chainweave.ai/metadata/test-" + requestId.substring(0, 8);
-      await chainWeave.connect(owner).updateRequestMetadata(requestId, tokenURI);
+      await chainWeave.connect(user1).completeAIGeneration(requestId, tokenURI);
 
-      // Verify status updated to AICompleted
+      // Verify status updated to Processing (since _initiateCrossChainMint is called)
       request = await chainWeave.getMintRequest(requestId);
-      expect(request.status).to.equal(2); // AICompleted = 2
+      expect(request.status).to.equal(1); // Processing = 1
       expect(request.tokenURI).to.equal(tokenURI);
 
-      // Step 4: Simulate cross-chain minting on destination chain
-      console.log("Step 4: Simulating cross-chain mint...");
-      const decodedRecipient = ethers.utils.getAddress(ethers.utils.hexDataSlice(recipient, 12));
+      // Step 4: The cross-chain mint is automatically initiated by completeAIGeneration
+      // In a real scenario, the gateway would call the destination minter
+      // For testing, we simulate the successful mint directly
+      console.log("Step 4: Simulating successful cross-chain mint...");
       
+      // Manually mint on destination chain to simulate the cross-chain result
+      await ethMinter.setChainWeaveContract(owner.address); // Temporarily allow owner to mint
       const mintTx = await ethMinter.connect(owner).mintFromChainWeave(
         requestId,
-        decodedRecipient,
+        user1.address,
         tokenURI
       );
+      await mintTx.wait();
+      // Reset the authorization
+      await ethMinter.setChainWeaveContract(chainWeave.address);
 
       await mintTx.wait();
 
@@ -136,7 +149,7 @@ describe("ChainWeave Integration Tests", function () {
         chainID: destinationChainId
       };
 
-      await chainWeave.connect(owner).onCall(
+      await chainWeave.connect(mockGateway).onCall(
         mockContext,
         ethers.constants.AddressZero, // zrc20
         0, // amount
