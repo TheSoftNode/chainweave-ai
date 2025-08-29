@@ -1,0 +1,25 @@
+[profile.default]
+src = 'contracts'
+out = 'out'
+viaIR = true
+libs = ['node_modules', "dependencies"]
+evm_version = "paris"
+test = 'tests'
+cache_path = 'cache_forge'
+verbosity = 3
+fs_permissions = [{ access = "read", path = "./node_modules" }]
+remappings = [
+  "forge-std/=dependencies/forge-std/src/",
+  "@openzeppelin/=node_modules/@openzeppelin/",
+  "@zetachain/=node_modules/@zetachain/",
+]
+
+[dependencies]
+forge-std = "1.9.7"
+
+[rpc_endpoints]
+zetachain_testnet = "https://zetachain-athens-evm.blockpi.network/v1/rpc/public"
+ethereum_sepolia = "https://sepolia.drpc.org"
+base_sepolia = "https://sepolia.base.org"
+bsc_testnet = "https://data-seed-prebsc-1-s1.binance.org:8545"
+polygon_amoy = "https://rpc-amoy.polygon.technology"

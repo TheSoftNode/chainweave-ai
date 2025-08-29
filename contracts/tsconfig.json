@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "outDir": "./dist",
+    "rootDir": "./",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
+  },
+  "include": [
+    "commands/**/*",
+    "scripts/**/*",
+    "tests/**/*",
+    "hardhat.config.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "out",
+    "cache_forge",
+    "artifacts",
+    "cache"
+  ]
+}
