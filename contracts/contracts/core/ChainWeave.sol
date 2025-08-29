@@ -1,16 +1,11 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.26;
 
-import "@zetachain/protocol-contracts/contracts/zevm/SystemContract.sol";
-// import "@zetachain/protocol-contracts/contracts/zevm/interfaces/zContract.sol";
-import "@zetachain/toolkit/contracts/SwapHelperLib.sol";
-import "@zetachain/toolkit/contracts/BytesHelperLib.sol";
+import "@zetachain/protocol-contracts/contracts/zevm/GatewayZEVM.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-// import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-// import "@openzeppelin/contracts/security/Pausable.sol";
-// import "@openzeppelin/contracts/utils/Counters.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "../interfaces/IChainWeave.sol";
-import "../interfaces/ICrossChainMinter.sol";
 
 /**
  * @title ChainWeave
@@ -19,15 +14,13 @@ import "../interfaces/ICrossChainMinter.sol";
  */
 contract ChainWeave is
     IChainWeave,
-    zContract,
+    UniversalContract,
     Ownable,
     ReentrancyGuard,
     Pausable
 {
-    using Counters for Counters.Counter;
-
-    /// @notice System contract for cross-chain operations
-    SystemContract public immutable systemContract;
+    /// @notice Gateway contract for cross-chain operations
+    GatewayZEVM public immutable gateway;
 
     /// @notice Backend service address authorized to complete AI generation
     address public backendService;
@@ -39,7 +32,7 @@ contract ChainWeave is
     uint256 public constant MAX_FEE = 1 ether;
 
     /// @notice Request ID counter
-    Counters.Counter private _requestCounter;
+    uint256 private _requestCounter;
 
     /// @notice Gas limit for cross-chain calls
     uint256 public gasLimit = 500000;
@@ -87,6 +80,11 @@ contract ChainWeave is
         _;
     }
 
+    modifier onlyGateway() {
+        require(msg.sender == address(gateway), "Only gateway");
+        _;
+    }
+
     modifier validRequestId(bytes32 requestId) {
         require(
             mintRequests[requestId].sender != address(0),
@@ -105,11 +103,14 @@ contract ChainWeave is
 
     /**
      * @notice Initialize the ChainWeave contract
-     * @param systemContractAddress Address of the system contract
+     * @param gatewayAddress Address of the gateway contract
      * @param _backendService Address of the backend service
      */
-    constructor(address systemContractAddress, address _backendService) {
-        systemContract = SystemContract(systemContractAddress);
+    constructor(
+        address payable gatewayAddress,
+        address _backendService
+    ) Ownable(msg.sender) {
+        gateway = GatewayZEVM(gatewayAddress);
         backendService = _backendService;
 
         // Initialize platform stats
@@ -133,12 +134,12 @@ contract ChainWeave is
         require(msg.value >= requestFee, "Insufficient fee");
 
         // Generate unique request ID
-        _requestCounter.increment();
+        _requestCounter++;
         requestId = keccak256(
             abi.encodePacked(
                 msg.sender,
                 block.timestamp,
-                _requestCounter.current(),
+                _requestCounter,
                 prompt,
                 destinationChainId
             )
@@ -267,49 +268,41 @@ contract ChainWeave is
         address minterContract = minterContracts[request.destinationChainId];
         require(minterContract != address(0), "No minter contract");
 
-        // Get the recipient address from bytes
-        address recipient = BytesHelperLib.bytesToAddress(request.recipient, 0);
-
         // Prepare message data for cross-chain call
         bytes memory messageData = abi.encode(
             requestId,
-            recipient,
+            request.recipient,
             request.tokenURI,
             uint256(0) // Default royalty, can be customized
         );
 
         // Execute cross-chain call via ZetaChain Gateway
-        (bool success, ) = address(systemContract).call(
-            abi.encodeWithSignature(
-                "crossChainCall(uint256,address,bytes,uint256)",
-                request.destinationChainId,
-                minterContract,
-                messageData,
-                gasLimit
-            )
+        RevertOptions memory revertOptions = RevertOptions({
+            revertAddress: address(this),
+            callOnRevert: true,
+            abortAddress: address(0),
+            revertMessage: abi.encode(requestId, "Minting failed"),
+            onRevertGasLimit: 100000
+        });
+
+        gateway.call(
+            abi.encodePacked(minterContract),
+            address(0), // No ZRC20 needed for gas fees
+            messageData,
+            CallOptions({gasLimit: gasLimit, isArbitraryCall: true}),
+            revertOptions
         );
-
-        if (!success) {
-            // Handle cross-chain call failure
-            request.status = RequestStatus.Failed;
-            _removeFromStatusArray(RequestStatus.Processing, requestId);
-            requestsByStatus[RequestStatus.Failed].push(requestId);
-
-            emit NFTMintReverted(requestId, "Cross-chain call failed");
-        }
     }
 
     /**
-     * @notice Handle cross-chain call responses
+     * @notice Handle cross-chain calls using Universal Contract pattern
      */
-    function onCrossChainCall(
-        zContext calldata context,
+    function onCall(
+        MessageContext calldata context,
         address zrc20,
         uint256 amount,
         bytes calldata message
-    ) external override {
-        require(msg.sender == address(systemContract), "Only system contract");
-
+    ) external override onlyGateway {
         // Decode the response from destination chain
         (
             bytes32 requestId,

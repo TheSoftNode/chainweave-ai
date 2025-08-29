@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.26;
 
-// import "@zetachain/protocol-contracts/contracts/evm/tools/ZetaInteractor.sol";
-// import "@zetachain/protocol-contracts/contracts/evm/interfaces/ZetaInterfaces.sol";
+import "@zetachain/protocol-contracts/contracts/evm/GatewayEVM.sol";
+import "@zetachain/protocol-contracts/contracts/evm/interfaces/IGatewayEVM.sol";
+import "@zetachain/protocol-contracts/contracts/Revert.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/token/common/ERC2981.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-// import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-// import "@openzeppelin/contracts/security/Pausable.sol";
-// import "@openzeppelin/contracts/utils/Counters.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/interfaces/IERC165.sol";
 import "../interfaces/ICrossChainMinter.sol";
 
@@ -23,21 +23,20 @@ contract CrossChainMinter is
     ERC721URIStorage,
     ERC721Enumerable,
     ERC2981,
-    ZetaInteractor,
     Ownable,
     ReentrancyGuard,
-    Pausable
+    Pausable,
+    Callable,
+    Revertable
 {
-    using Counters for Counters.Counter;
-
     /// @notice Token ID counter
-    Counters.Counter private _tokenIds;
+    uint256 private _tokenIds;
 
     /// @notice ChainWeave contract address on ZetaChain
     address public chainWeaveContract;
 
-    /// @notice ZetaChain connector contract
-    ZetaInterfaces.ZetaConnector public connector;
+    /// @notice Gateway contract for cross-chain communication
+    GatewayEVM public gateway;
 
     /// @notice Maximum royalty percentage (10% = 1000 basis points)
     uint256 public constant MAX_ROYALTY = 1000;
@@ -85,7 +84,7 @@ contract CrossChainMinter is
     }
 
     modifier tokenExists(uint256 tokenId) {
-        require(_exists(tokenId), "Token does not exist");
+        require(_ownerOf(tokenId) != address(0), "Token does not exist");
         _;
     }
 
@@ -96,22 +95,19 @@ contract CrossChainMinter is
 
     /**
      * @notice Initialize the CrossChainMinter contract
-     * @param connectorAddress Address of the ZetaChain connector
-     * @param zetaTokenAddress Address of the ZETA token
+     * @param gatewayAddress Address of the Gateway contract
      * @param _chainWeaveContract Address of ChainWeave contract on ZetaChain
      * @param name_ Name of the NFT collection
      * @param symbol_ Symbol of the NFT collection
      */
     constructor(
-        address connectorAddress,
-        address zetaTokenAddress,
+        address gatewayAddress,
         address _chainWeaveContract,
         string memory name_,
         string memory symbol_
-    ) ERC721(name_, symbol_) ZetaInteractor(connectorAddress) {
-        _setZetaToken(zetaTokenAddress);
+    ) ERC721(name_, symbol_) Ownable(msg.sender) {
+        gateway = GatewayEVM(gatewayAddress);
         chainWeaveContract = _chainWeaveContract;
-        connector = ZetaInterfaces.ZetaConnector(connectorAddress);
 
         // Initialize collection stats
         collectionStats.totalSupply = 0;
@@ -128,34 +124,34 @@ contract CrossChainMinter is
     function mintFromChainWeave(
         bytes32 requestId,
         address recipient,
-        string memory tokenURI
+        string memory _tokenURI
     ) external nonReentrant whenNotPaused returns (uint256 tokenId) {
         require(
             msg.sender == chainWeaveContract || msg.sender == address(this),
             "Only ChainWeave or internal"
         );
         require(recipient != address(0), "Invalid recipient");
-        require(bytes(tokenURI).length > 0, "Empty token URI");
+        require(bytes(_tokenURI).length > 0, "Empty token URI");
         require(!processedRequests[requestId], "Request already processed");
 
         // Mark request as processed
         processedRequests[requestId] = true;
 
         // Increment token ID and mint
-        _tokenIds.increment();
-        tokenId = _tokenIds.current();
+        _tokenIds++;
+        tokenId = _tokenIds;
 
         _safeMint(recipient, tokenId);
-        _setTokenURI(tokenId, tokenURI);
+        _setTokenURI(tokenId, _tokenURI);
 
         // Set default royalty for the token
-        _setTokenRoyalty(tokenId, recipient, defaultRoyalty);
+        _setTokenRoyalty(tokenId, recipient, uint96(defaultRoyalty));
 
         // Store token details
         tokenDetails[tokenId] = TokenDetails({
             tokenId: tokenId,
             owner: recipient,
-            tokenURI: tokenURI,
+            tokenURI: _tokenURI,
             requestId: requestId,
             mintTimestamp: block.timestamp,
             royalty: defaultRoyalty,
@@ -173,7 +169,7 @@ contract CrossChainMinter is
             requestId,
             recipient,
             tokenId,
-            tokenURI,
+            _tokenURI,
             defaultRoyalty
         );
         emit TokenMintedWithRoyalty(
@@ -192,7 +188,7 @@ contract CrossChainMinter is
     function mintWithRoyalty(
         bytes32 requestId,
         address recipient,
-        string memory tokenURI,
+        string memory _tokenURI,
         uint256 royalty
     ) external nonReentrant whenNotPaused returns (uint256 tokenId) {
         require(
@@ -200,7 +196,7 @@ contract CrossChainMinter is
             "Only ChainWeave or internal"
         );
         require(recipient != address(0), "Invalid recipient");
-        require(bytes(tokenURI).length > 0, "Empty token URI");
+        require(bytes(_tokenURI).length > 0, "Empty token URI");
         require(royalty <= MAX_ROYALTY, "Royalty too high");
         require(!processedRequests[requestId], "Request already processed");
 
@@ -208,20 +204,20 @@ contract CrossChainMinter is
         processedRequests[requestId] = true;
 
         // Increment token ID and mint
-        _tokenIds.increment();
-        tokenId = _tokenIds.current();
+        _tokenIds++;
+        tokenId = _tokenIds;
 
         _safeMint(recipient, tokenId);
-        _setTokenURI(tokenId, tokenURI);
+        _setTokenURI(tokenId, _tokenURI);
 
         // Set custom royalty for the token
-        _setTokenRoyalty(tokenId, recipient, royalty);
+        _setTokenRoyalty(tokenId, recipient, uint96(royalty));
 
         // Store token details
         tokenDetails[tokenId] = TokenDetails({
             tokenId: tokenId,
             owner: recipient,
-            tokenURI: tokenURI,
+            tokenURI: _tokenURI,
             requestId: requestId,
             mintTimestamp: block.timestamp,
             royalty: royalty,
@@ -239,7 +235,7 @@ contract CrossChainMinter is
             requestId,
             recipient,
             tokenId,
-            tokenURI,
+            _tokenURI,
             royalty
         );
         emit TokenMintedWithRoyalty(tokenId, recipient, requestId, royalty);
@@ -280,7 +276,7 @@ contract CrossChainMinter is
     ) external tokenExists(tokenId) onlyTokenOwner(tokenId) {
         require(royalty <= MAX_ROYALTY, "Royalty too high");
 
-        _setTokenRoyalty(tokenId, ownerOf(tokenId), royalty);
+        _setTokenRoyalty(tokenId, ownerOf(tokenId), uint96(royalty));
         tokenDetails[tokenId].royalty = royalty;
 
         emit RoyaltySet(tokenId, royalty);
@@ -359,7 +355,7 @@ contract CrossChainMinter is
         owners = new address[](tokenIds.length);
 
         for (uint256 i = 0; i < tokenIds.length; i++) {
-            if (_exists(tokenIds[i])) {
+            if (_ownerOf(tokenIds[i]) != address(0)) {
                 tokenURIs[i] = tokenURI(tokenIds[i]);
                 owners[i] = ownerOf(tokenIds[i]);
             }
@@ -417,7 +413,7 @@ contract CrossChainMinter is
         returns (uint256 tokenId, address owner, string memory tokenURI_)
     {
         tokenId = requestToToken[requestId];
-        if (tokenId > 0 && _exists(tokenId)) {
+        if (tokenId > 0 && _ownerOf(tokenId) != address(0)) {
             owner = ownerOf(tokenId);
             tokenURI_ = tokenURI(tokenId);
         }
@@ -519,41 +515,62 @@ contract CrossChainMinter is
     /**
      * @notice Override transfer to update token details
      */
-    function _beforeTokenTransfer(
-        address from,
+    /**
+     * @notice Override _update for OpenZeppelin v5 compatibility
+     */
+    function _update(
         address to,
         uint256 tokenId,
-        uint256 batchSize
-    ) internal override(ERC721, ERC721Enumerable) whenNotPaused {
-        super._beforeTokenTransfer(from, to, tokenId, batchSize);
+        address auth
+    )
+        internal
+        override(ERC721, ERC721Enumerable)
+        whenNotPaused
+        returns (address)
+    {
+        address from = super._update(to, tokenId, auth);
 
-        // Update token details on transfer
-        if (_exists(tokenId)) {
+        // Update token details on transfer (enterprise tracking)
+        if (tokenId > 0 && to != address(0)) {
             tokenDetails[tokenId].owner = to;
         }
+
+        return from;
     }
 
     /**
-     * @notice Handle cross-chain calls from ZetaChain
+     * @notice Override _increaseBalance for OpenZeppelin v5 compatibility
      */
-    function onZetaMessage(
-        ZetaInterfaces.ZetaMessage calldata zetaMessage
-    ) external override isValidMessageCall(zetaMessage) {
-        // Decode message from ChainWeave
+    function _increaseBalance(
+        address account,
+        uint128 value
+    ) internal override(ERC721, ERC721Enumerable) {
+        super._increaseBalance(account, value);
+    }
+
+    /**
+     * @notice Handle cross-chain calls from ZetaChain via Gateway
+     * @dev Enterprise-level function with comprehensive error handling and validation
+     */
+    function onCall(
+        MessageContext calldata context,
+        bytes calldata message
+    ) external payable returns (bytes memory) {
+        require(msg.sender == address(gateway), "Only gateway can call");
+
+        // Decode message from ChainWeave with enterprise validation
         (
             bytes32 requestId,
             address recipient,
             string memory tokenURI_,
             uint256 royalty
-        ) = abi.decode(
-                zetaMessage.message,
-                (bytes32, address, string, uint256)
-            );
+        ) = abi.decode(message, (bytes32, address, string, uint256));
 
         uint256 tokenId = 0;
         bool success = false;
         string memory errorMessage = "";
 
+        // Enterprise-level try-catch with detailed error handling
         try
             this.mintFromChainWeaveInternal(
                 requestId,
@@ -570,7 +587,7 @@ contract CrossChainMinter is
             errorMessage = "Unknown minting error";
         }
 
-        // Send response back to ChainWeave on ZetaChain
+        // Send enterprise-level response back to ChainWeave on ZetaChain
         bytes memory responseMessage = abi.encode(
             requestId,
             success,
@@ -578,17 +595,23 @@ contract CrossChainMinter is
             errorMessage
         );
 
-        // Send response via ZetaChain Gateway
-        connector.send(
-            ZetaInterfaces.SendInput({
-                destinationChainId: zetaMessage.sourceChainId,
-                destinationAddress: abi.encodePacked(chainWeaveContract),
-                destinationGasLimit: 300000,
-                message: responseMessage,
-                zetaValueAndGas: ZetaInterfaces.ZetaValueAndGas({zetaValue: 0}),
-                zetaParams: abi.encode("")
-            })
+        // Use Gateway deposit and call pattern for response
+        RevertOptions memory revertOptions = RevertOptions({
+            revertAddress: address(this),
+            callOnRevert: true,
+            abortAddress: address(0),
+            revertMessage: abi.encode(requestId, "Minting response failed"),
+            onRevertGasLimit: 100000
+        });
+
+        gateway.depositAndCall{value: msg.value}(
+            chainWeaveContract,
+            responseMessage,
+            revertOptions
         );
+
+        // Return response for enterprise logging
+        return responseMessage;
     }
 
     /**
@@ -603,23 +626,25 @@ contract CrossChainMinter is
         require(msg.sender == address(this), "Only self");
 
         if (royalty > 0 && royalty <= MAX_ROYALTY) {
-            return mintWithRoyalty(requestId, recipient, tokenURI_, royalty);
+            return
+                this.mintWithRoyalty(requestId, recipient, tokenURI_, royalty);
         } else {
-            return mintFromChainWeave(requestId, recipient, tokenURI_);
+            return this.mintFromChainWeave(requestId, recipient, tokenURI_);
         }
     }
 
     /**
-     * @notice Handle cross-chain revert
+     * @notice Handle cross-chain revert with enterprise-level error handling
+     * @dev Maintains comprehensive revert processing and logging
      */
-    function onZetaRevert(
-        ZetaInterfaces.ZetaRevert calldata zetaRevert
-    ) external override isValidRevertCall(zetaRevert) {
+    function onRevert(RevertContext calldata revertContext) external {
+        require(msg.sender == address(gateway), "Only gateway can call");
+
         bytes32 requestId;
         string memory errorReason;
 
-        if (zetaRevert.message.length > 0) {
-            try this.decodeRevertMessage(zetaRevert.message) returns (
+        if (revertContext.revertMessage.length > 0) {
+            try this.decodeRevertMessage(revertContext.revertMessage) returns (
                 bytes32 _requestId,
                 string memory _reason
             ) {
@@ -630,12 +655,14 @@ contract CrossChainMinter is
             }
         }
 
+        // Enterprise-level event emission with comprehensive data
         emit CrossChainMintReverted(
             requestId,
             errorReason,
-            zetaRevert.sourceChainId
+            revertContext.sender
         );
 
+        // Maintain request processing state for enterprise tracking
         if (requestId != bytes32(0)) {
             processedRequests[requestId] = false;
         }
@@ -656,18 +683,21 @@ contract CrossChainMinter is
     event CrossChainMintReverted(
         bytes32 indexed requestId,
         string reason,
-        uint256 sourceChainId
+        address sender
     );
 
     /**
-     * @notice Override _burn to update stats
+     * @notice Burn token with enterprise-level stats tracking
      */
-    function _burn(
-        uint256 tokenId
-    ) internal override(ERC721, ERC721URIStorage) {
-        super._burn(tokenId);
+    function burn(uint256 tokenId) external {
+        require(
+            ownerOf(tokenId) == msg.sender ||
+                getApproved(tokenId) == msg.sender ||
+                isApprovedForAll(ownerOf(tokenId), msg.sender),
+            "Not authorized to burn"
+        );
 
-        // Update collection stats
+        // Update collection stats before burning
         collectionStats.totalSupply--;
         collectionStats.totalBurned++;
 
@@ -676,7 +706,14 @@ contract CrossChainMinter is
 
         // Reset royalty info
         _resetTokenRoyalty(tokenId);
+
+        // Call the base burn function
+        _burn(tokenId);
+
+        emit TokenBurned(tokenId, msg.sender);
     }
+
+    event TokenBurned(uint256 indexed tokenId, address indexed burner);
 
     /**
      * @notice Override tokenURI to handle both URI storage methods
@@ -695,7 +732,7 @@ contract CrossChainMinter is
     )
         public
         view
-        override(ERC721, ERC721Enumerable, ERC2981, IERC165)
+        override(ERC721Enumerable, ERC721URIStorage, ERC2981)
         returns (bool)
     {
         return super.supportsInterface(interfaceId);

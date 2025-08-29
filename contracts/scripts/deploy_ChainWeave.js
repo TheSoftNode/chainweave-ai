@@ -1,5 +1,4 @@
 const { ethers } = require("hardhat");
-const { getAddress } = require("ethers");
 
 /**
  * Deploy ChainWeave Universal Contract on ZetaChain
@@ -10,7 +9,7 @@ async function main() {
   // Get deployer account
   const [deployer] = await ethers.getSigners();
   console.log("Deploying with account:", deployer.address);
-  console.log("Account balance:", ethers.formatEther(await deployer.provider.getBalance(deployer.address)), "ETH");
+  console.log("Account balance:", ethers.utils.formatEther(await deployer.getBalance()), "ETH");
 
   // ZetaChain Testnet Gateway address
   const GATEWAY_ADDRESS = "0x6c533f7fe93fae114d0954697069df33c9b74fd7";

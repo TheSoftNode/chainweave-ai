@@ -20,36 +20,36 @@ describe("ChainWeave Integration Tests", function () {
 
     // Deploy ChainWeave contract
     const ChainWeave = await ethers.getContractFactory("ChainWeave");
-    const chainWeave = await ChainWeave.deploy(await mockGateway.getAddress());
+    const chainWeave = await ChainWeave.deploy(mockGateway.address, owner.address);
 
     // Deploy CrossChainMinter contracts for different chains
     const CrossChainMinter = await ethers.getContractFactory("CrossChainMinter");
     
     const ethMinter = await CrossChainMinter.deploy(
-      await mockGateway.getAddress(),
-      await chainWeave.getAddress(),
+      mockGateway.address,
+      chainWeave.address,
       "ChainWeave AI - Ethereum",
       "CWAI-ETH"
     );
 
     const baseMinter = await CrossChainMinter.deploy(
-      await mockGateway.getAddress(),
-      await chainWeave.getAddress(),
+      mockGateway.address,
+      chainWeave.address,
       "ChainWeave AI - Base",
       "CWAI-BASE"
     );
 
     const bscMinter = await CrossChainMinter.deploy(
-      await mockGateway.getAddress(),
-      await chainWeave.getAddress(),
+      mockGateway.address,
+      chainWeave.address,
       "ChainWeave AI - BSC",
       "CWAI-BSC"
     );
 
     // Configure chain minters in ChainWeave
-    await chainWeave.setChainMinter(11155111, await ethMinter.getAddress()); // Ethereum Sepolia
-    await chainWeave.setChainMinter(84532, await baseMinter.getAddress());   // Base Sepolia
-    await chainWeave.setChainMinter(97, await bscMinter.getAddress());       // BSC Testnet
+    await chainWeave.addSupportedChain(11155111, ethMinter.address); // Ethereum Sepolia
+    await chainWeave.addSupportedChain(84532, baseMinter.address);   // Base Sepolia
+    await chainWeave.addSupportedChain(97, bscMinter.address);       // BSC Testnet
 
     return { 
       chainWeave, 
@@ -75,14 +75,16 @@ describe("ChainWeave Integration Tests", function () {
 
       const prompt = "A magnificent AI-generated artwork of space exploration";
       const destinationChainId = 11155111; // Ethereum Sepolia
-      const recipient = ethers.solidityPacked(["address"], [user1.address]);
+      const recipient = ethers.utils.solidityPack(["address"], [user1.address]);
 
-      // Step 1: User requests NFT mint on ZetaChain
+      // Step 1: User requests NFT mint on ZetaChain (with payment)
       console.log("Step 1: Requesting NFT mint...");
+      const mintFee = ethers.utils.parseEther("0.01"); // 0.01 ETH fee
       const tx = await chainWeave.connect(user1).requestNFTMint(
         prompt,
         destinationChainId,
-        recipient
+        recipient,
+        { value: mintFee }
       );
 
       const receipt = await tx.wait();
@@ -107,7 +109,7 @@ describe("ChainWeave Integration Tests", function () {
       console.log("Step 3: Simulating cross-chain mint...");
       const decodedRecipient = ethers.getAddress(ethers.dataSlice(recipient, 12));
       
-      const mintTx = await ethMinter.connect(mockGateway).mintNFT(
+      const mintTx = await ethMinter.connect(owner).mintFromChainWeave(
         requestId,
         decodedRecipient,
         status.tokenURI,
@@ -124,7 +126,23 @@ describe("ChainWeave Integration Tests", function () {
 
       // Step 5: Simulate callback to ZetaChain
       console.log("Step 5: Simulating success callback...");
-      await chainWeave.connect(mockGateway).onMintSuccess(requestId, 1);
+      const callbackMessage = ethers.utils.defaultAbiCoder.encode(
+        ["bytes32", "bool", "uint256", "string"],
+        [requestId, true, 1, ""]
+      );
+      
+      const mockContext = {
+        sender: ethers.utils.arrayify("0x1234"),
+        senderEVM: user1.address,
+        chainID: destinationChainId
+      };
+
+      await chainWeave.connect(owner).onCall(
+        mockContext,
+        ethers.constants.AddressZero, // zrc20
+        0, // amount
+        callbackMessage
+      );
 
       // Step 6: Verify final status
       console.log("Step 6: Verifying final status...");
@@ -169,12 +187,14 @@ describe("ChainWeave Integration Tests", function () {
 
       // Request mints on all chains
       for (let i = 0; i < chains.length; i++) {
-        const recipient = ethers.solidityPacked(["address"], [user1.address]);
+        const recipient = ethers.utils.solidityPack(["address"], [user1.address]);
+        const mintFee = ethers.utils.parseEther("0.01");
         
         const tx = await chainWeave.connect(user1).requestNFTMint(
           prompts[i],
           chains[i].id,
-          recipient
+          recipient,
+          { value: mintFee }
         );
 
         const receipt = await tx.wait();
@@ -193,14 +213,31 @@ describe("ChainWeave Integration Tests", function () {
       for (let i = 0; i < chains.length; i++) {
         const status = await chainWeave.getMintStatus(requestIds[i]);
         
-        await chains[i].minter.connect(mockGateway).mintNFT(
+        await chains[i].minter.connect(owner).mintFromChainWeave(
           requestIds[i],
           user1.address,
-          status.tokenURI,
+          "https://api.chainweave.ai/metadata/" + i,
           prompts[i]
         );
 
-        await chainWeave.connect(mockGateway).onMintSuccess(requestIds[i], 1);
+        // Simulate success callback
+        const callbackMessage = ethers.utils.defaultAbiCoder.encode(
+          ["bytes32", "bool", "uint256", "string"],
+          [requestIds[i], true, 1, ""]
+        );
+        
+        const mockContext = {
+          sender: ethers.utils.arrayify("0x1234"),
+          senderEVM: user1.address,
+          chainID: chains[i].id
+        };
+
+        await chainWeave.connect(owner).onCall(
+          mockContext,
+          ethers.constants.AddressZero,
+          0,
+          callbackMessage
+        );
       }
 
       // Verify all mints completed
@@ -232,13 +269,15 @@ describe("ChainWeave Integration Tests", function () {
 
       const prompt = "Test prompt for failure case";
       const destinationChainId = 11155111;
-      const recipient = ethers.solidityPacked(["address"], [user1.address]);
+      const recipient = ethers.utils.solidityPack(["address"], [user1.address]);
+      const mintFee = ethers.utils.parseEther("0.01");
 
       // Request mint
       const tx = await chainWeave.connect(user1).requestNFTMint(
         prompt,
         destinationChainId,
-        recipient
+        recipient,
+        { value: mintFee }
       );
 
       const receipt = await tx.wait();
@@ -252,39 +291,43 @@ describe("ChainWeave Integration Tests", function () {
 
       const requestId = chainWeave.interface.parseLog(event).args.requestId;
 
-      // Simulate revert scenario
-      const revertMessage = ethers.AbiCoder.defaultAbiCoder().encode(
-        ["bytes32"],
-        [requestId]
+      // Simulate revert scenario using onCall with failed mint
+      const revertMessage = ethers.utils.defaultAbiCoder.encode(
+        ["bytes32", "bool", "uint256", "string"],
+        [requestId, false, 0, "Mint failed on destination chain"]
       );
 
-      const revertContext = {
-        sender: ethers.ZeroAddress,
-        asset: ethers.ZeroAddress,
-        amount: 0,
-        revertMessage: revertMessage
+      const mockContext = {
+        sender: ethers.utils.arrayify("0x1234"),
+        senderEVM: user1.address,
+        chainID: 11155111
       };
 
-      await chainWeave.connect(mockGateway).onRevert(revertContext);
+      await chainWeave.connect(owner).onCall(
+        mockContext,
+        ethers.constants.AddressZero,
+        0,
+        revertMessage
+      );
 
-      // Check status updated to reverted
+      // Check status updated to failed
       const status = await chainWeave.getMintStatus(requestId);
-      expect(status.status).to.equal("Reverted");
+      expect(status.status).to.equal("Failed");
     });
 
     it("Should prevent duplicate minting attempts", async function () {
       const { 
         ethMinter,
-        mockGateway,
+        owner,
         user1 
       } = await loadFixture(deployIntegrationFixture);
 
-      const requestId = ethers.keccak256(ethers.toUtf8Bytes("duplicate-test"));
+      const requestId = ethers.utils.keccak256(ethers.utils.toUtf8Bytes("duplicate-test"));
       const tokenURI = "https://api.chainweave.ai/metadata/duplicate";
       const prompt = "Duplicate test prompt";
 
       // First mint should succeed
-      await ethMinter.connect(mockGateway).mintNFT(
+      await ethMinter.connect(owner).mintFromChainWeave(
         requestId,
         user1.address,
         tokenURI,
@@ -293,7 +336,7 @@ describe("ChainWeave Integration Tests", function () {
 
       // Second mint with same request ID should fail
       await expect(
-        ethMinter.connect(mockGateway).mintNFT(
+        ethMinter.connect(owner).mintFromChainWeave(
           requestId,
           user1.address,
           tokenURI,
@@ -307,15 +350,17 @@ describe("ChainWeave Integration Tests", function () {
 
       const prompt = "Test prompt";
       const destinationChainId = 11155111;
-      const invalidRecipient = "0x"; // Invalid recipient
+      const invalidRecipient = "0x12"; // Invalid recipient (too short)
+      const mintFee = ethers.utils.parseEther("0.01");
 
       await expect(
         chainWeave.connect(user1).requestNFTMint(
           prompt,
           destinationChainId,
-          invalidRecipient
+          invalidRecipient,
+          { value: mintFee }
         )
-      ).to.not.be.reverted; // Should allow empty recipient for flexibility
+      ).to.be.revertedWith("Empty recipient");
     });
   });
 
@@ -328,27 +373,43 @@ describe("ChainWeave Integration Tests", function () {
         user2 
       } = await loadFixture(deployIntegrationFixture);
 
-      const requestId = ethers.keccak256(ethers.toUtf8Bytes("access-test"));
+      const requestId = ethers.utils.keccak256(ethers.utils.toUtf8Bytes("access-test"));
       const tokenURI = "https://api.chainweave.ai/metadata/access";
       const prompt = "Access control test";
 
       // Non-gateway users should not be able to call gateway functions
-      await expect(
-        chainWeave.connect(user1).onMintSuccess(requestId, 1)
-      ).to.be.revertedWithCustomError(chainWeave, "Unauthorized");
+      const mockContext = {
+        sender: ethers.utils.arrayify("0x1234"),
+        senderEVM: user1.address,
+        chainID: 1
+      };
+      
+      const callbackMessage = ethers.utils.defaultAbiCoder.encode(
+        ["bytes32", "bool", "uint256", "string"],
+        [requestId, true, 1, ""]
+      );
 
       await expect(
-        ethMinter.connect(user2).mintNFT(
+        chainWeave.connect(user1).onCall(
+          mockContext,
+          ethers.constants.AddressZero,
+          0,
+          callbackMessage
+        )
+      ).to.be.revertedWith("Only gateway");
+
+      await expect(
+        ethMinter.connect(user2).mintFromChainWeave(
           requestId,
           user1.address,
           tokenURI,
           prompt
         )
-      ).to.be.revertedWithCustomError(ethMinter, "Unauthorized");
+      ).to.be.revertedWith("Only gateway can call");
 
       // Non-owners should not be able to configure contracts
       await expect(
-        chainWeave.connect(user1).setChainMinter(999999, user1.address)
+        chainWeave.connect(user1).addSupportedChain(999999, user1.address)
       ).to.be.revertedWith("Ownable: caller is not the owner");
 
       await expect(
@@ -365,7 +426,8 @@ describe("ChainWeave Integration Tests", function () {
       } = await loadFixture(deployIntegrationFixture);
 
       const batchSize = 5;
-      const recipient = ethers.solidityPacked(["address"], [user1.address]);
+      const recipient = ethers.utils.solidityPack(["address"], [user1.address]);
+      const mintFee = ethers.utils.parseEther("0.01");
 
       // Create multiple requests
       const promises = [];
@@ -374,7 +436,8 @@ describe("ChainWeave Integration Tests", function () {
           chainWeave.connect(user1).requestNFTMint(
             `Batch prompt ${i}`,
             11155111, // Ethereum Sepolia
-            recipient
+            recipient,
+            { value: mintFee }
           )
         );
       }
@@ -395,13 +458,15 @@ describe("ChainWeave Integration Tests", function () {
 
       const prompt = "Gas estimation test";
       const destinationChainId = 11155111;
-      const recipient = ethers.solidityPacked(["address"], [user1.address]);
+      const recipient = ethers.utils.solidityPack(["address"], [user1.address]);
+      const mintFee = ethers.utils.parseEther("0.01");
 
       // Estimate gas for mint request
-      const gasEstimate = await chainWeave.connect(user1).requestNFTMint.estimateGas(
+      const gasEstimate = await chainWeave.connect(user1).estimateGas.requestNFTMint(
         prompt,
         destinationChainId,
-        recipient
+        recipient,
+        { value: mintFee }
       );
 
       expect(gasEstimate).to.be.gt(0);
@@ -415,18 +480,19 @@ describe("ChainWeave Integration Tests", function () {
         chainWeave, 
         ethMinter,
         mockGateway,
+        owner,
         user1 
       } = await loadFixture(deployIntegrationFixture);
 
       const initialSupply = await ethMinter.totalSupply();
       const initialBalance = await ethMinter.balanceOf(user1.address);
 
-      // Mint an NFT
-      const requestId = ethers.keccak256(ethers.toUtf8Bytes("consistency-test"));
+      // Mint an NFT using owner as the gateway
+      const requestId = ethers.utils.keccak256(ethers.utils.toUtf8Bytes("consistency-test"));
       const tokenURI = "https://api.chainweave.ai/metadata/consistency";
       const prompt = "State consistency test";
 
-      await ethMinter.connect(mockGateway).mintNFT(
+      await ethMinter.connect(owner).mintFromChainWeave(
         requestId,
         user1.address,
         tokenURI,
@@ -444,36 +510,4 @@ describe("ChainWeave Integration Tests", function () {
       expect(await ethMinter.getTokenPrompt(tokenId)).to.equal(prompt);
     });
   });
-});
-
-
-// Mock System Contract for ZetaChain testing
-contract("MockSystemContract", function() {
-  function MockSystemContract() {}
-  
-  MockSystemContract.prototype.crossChainCall = function(chainId, target, data, gasLimit) {
-    // Mock successful cross-chain call
-    return true;
-  };
-
-  MockSystemContract.prototype.onCrossChainCall = function(context, target, data) {
-    // Mock cross-chain call response
-    return "0x";
-  };
-
-  return MockSystemContract;
-});
-
-// Mock ZetaConnector for testing
-contract("MockZetaConnector", function() {
-  function MockZetaConnector() {}
-  
-  MockZetaConnector.prototype.send = function(sendInput) {
-    return {
-      zetaTxHash: "0x1234567890abcdef",
-      success: true
-    };
-  };
-
-  return MockZetaConnector;
 });
