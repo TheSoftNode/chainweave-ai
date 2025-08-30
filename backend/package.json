@@ -17,7 +17,12 @@
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist",
     "prebuild": "npm run clean",
-    "test:integration": "ts-node src/scripts/testIntegration.ts"
+    "test:integration": "ts-node src/scripts/testIntegration.ts",
+    "deploy:gcp": "./deploy-gcp.sh",
+    "setup:secrets": "./setup-secrets.sh",
+    "deploy:build": "npm run clean && npm ci && npm run build",
+    "gcp:logs": "gcloud app logs tail -s default",
+    "gcp:browse": "gcloud app browse"
   },
   "keywords": [
     "chainweave",
