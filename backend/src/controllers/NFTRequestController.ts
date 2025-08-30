@@ -62,6 +62,14 @@ export class NFTRequestController {
 
       // Format response for frontend compatibility
       const nftData = result.data;
+      if (!nftData) {
+        res.status(500).json({
+          success: false,
+          error: 'Failed to create NFT request',
+        } as ApiResponse);
+        return;
+      }
+
       res.status(201).json({
         success: true,
         data: {
@@ -580,6 +588,7 @@ export class NFTRequestController {
       [RequestStatus.PENDING]: 'Processing',
       [RequestStatus.PROCESSING]: 'Processing', 
       [RequestStatus.AI_COMPLETED]: 'Minting',
+      [RequestStatus.CROSS_CHAIN_PENDING]: 'Minting',
       [RequestStatus.COMPLETED]: 'Owned',
       [RequestStatus.FAILED]: 'Failed',
       [RequestStatus.CANCELLED]: 'Cancelled',
@@ -611,7 +620,7 @@ export class NFTRequestController {
         return;
       }
 
-      const { requestId } = req.params;
+      const { requestId: _requestId } = req.params;
 
       // For now, just return success - would implement like system
       res.status(200).json({

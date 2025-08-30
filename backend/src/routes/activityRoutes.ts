@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { ActivityController } from '@/controllers/ActivityController';
-import { authenticateUser, optionalAuth } from '@/middleware/auth';
-import { validateRequest } from '@/middleware/validation';
 import { query } from 'express-validator';
+import { ActivityController } from '../controllers/ActivityController';
+import { authenticateUser, optionalAuth } from '../middleware/auth';
+import { validateRequest } from '../middleware/validation';
 
 const router = Router();
 const activityController = new ActivityController();

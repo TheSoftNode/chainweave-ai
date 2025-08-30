@@ -7,7 +7,7 @@ dotenv.config();
 // Environment variables validation schema
 const envSchema = Joi.object({
   NODE_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
-  PORT: Joi.number().default(3001),
+  PORT: Joi.number().default(5000),
   HOST: Joi.string().default('localhost'),
   
   // Database
@@ -30,7 +30,7 @@ const envSchema = Joi.object({
   
   // AI Configuration
   GEMINI_API_KEY: Joi.string().required(),
-  GEMINI_MODEL: Joi.string().default('gemini-pro'),
+  GEMINI_MODEL: Joi.string().default('gemini-1.5-flash'),
   OPENAI_API_KEY: Joi.string().optional(),
   
   // IPFS
@@ -41,10 +41,16 @@ const envSchema = Joi.object({
   
   // Blockchain
   ZETACHAIN_RPC_URL: Joi.string().uri().required(),
-  ZETACHAIN_CHAIN_ID: Joi.number().default(7001),
+  ZETACHAIN_CHAIN_ID: Joi.number().default(7000),
   CHAINWEAVE_CONTRACT_ADDRESS: Joi.string().required(),
   BACKEND_PRIVATE_KEY: Joi.string().required(),
   OWNER_PRIVATE_KEY: Joi.string().optional(),
+  
+  // CrossChain Minter Contract Addresses
+  ETHEREUM_SEPOLIA_MINTER: Joi.string().optional(),
+  BASE_SEPOLIA_MINTER: Joi.string().optional(),
+  BSC_TESTNET_MINTER: Joi.string().optional(),
+  POLYGON_AMOY_MINTER: Joi.string().optional(),
   
   // Rate limiting
   RATE_LIMIT_WINDOW_MS: Joi.number().default(900000),
@@ -52,6 +58,9 @@ const envSchema = Joi.object({
   
   // CORS
   CORS_ORIGIN: Joi.string().default('http://localhost:3000'),
+  
+  // Admin wallets
+  ADMIN_WALLETS: Joi.string().default(''),
   
   // Logging
   LOG_LEVEL: Joi.string().valid('error', 'warn', 'info', 'debug').default('info'),
@@ -133,6 +142,12 @@ export const config = {
     },
     backendPrivateKey: envVars.BACKEND_PRIVATE_KEY,
     ownerPrivateKey: envVars.OWNER_PRIVATE_KEY,
+    crossChainMinters: {
+      ethereumSepolia: envVars.ETHEREUM_SEPOLIA_MINTER,
+      baseSepolia: envVars.BASE_SEPOLIA_MINTER,
+      bscTestnet: envVars.BSC_TESTNET_MINTER,
+      polygonAmoy: envVars.POLYGON_AMOY_MINTER,
+    },
   },
   
   rateLimit: {
@@ -142,6 +157,10 @@ export const config = {
   
   cors: {
     origin: envVars.CORS_ORIGIN.split(','),
+  },
+  
+  admin: {
+    wallets: envVars.ADMIN_WALLETS.split(',').filter((w: string) => w.trim().length > 0),
   },
   
   logging: {

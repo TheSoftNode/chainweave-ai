@@ -1,7 +1,18 @@
 require("@nomicfoundation/hardhat-toolbox");
+require("dotenv").config();
+
+// Import ZetaChain toolkit for proper configuration
+const { getHardhatConfig } = require("@zetachain/toolkit/utils");
+
+// Get ZetaChain config first
+const zetaConfig = getHardhatConfig({ 
+  accounts: [process.env.PRIVATE_KEY || ""] 
+});
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
+  // Use ZetaChain's hardhat configuration with our customizations
+  ...zetaConfig,
   solidity: {
     version: "0.8.26",
     settings: {
@@ -9,20 +20,14 @@ module.exports = {
         enabled: true,
         runs: 200,
       },
+      viaIR: true, // Enable IR for gas optimization with complex contracts
     },
   },
+  // Override paths to ensure our test directory is used
   paths: {
+    ...zetaConfig.paths,
     test: "./tests"
   },
-  networks: {
-    hardhat: {},
-    // Add ZetaChain networks here if needed
-    zeta_testnet: {
-      url: "https://zetachain-evm.blockpi.network/v1/rpc/public",
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
-    },
-  },
-  etherscan: {
-    // Add Etherscan API keys if needed
-  },
+  // The getHardhatConfig already includes all ZetaChain networks
+  // Including testnet and mainnet configurations
 };

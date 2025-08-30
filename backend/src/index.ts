@@ -36,6 +36,6 @@ import './server';
 
 logger.info('ChainWeave AI Backend starting...', {
   node_version: process.version,
-  environment: process.env.NODE_ENV,
+  environment: process.env['NODE_ENV'],
   pid: process.pid,
 });

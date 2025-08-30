@@ -325,7 +325,7 @@ describe("ChainWeave Integration Tests", function () {
       .withArgs(user1.address);
 
       await expect(
-        ethMinter.connect(user1).setBaseURI("https://malicious.com/")
+        ethMinter.connect(user1).setDefaultRoyalty(500)
       ).to.be.revertedWithCustomError(ethMinter, "OwnableUnauthorizedAccount")
       .withArgs(user1.address);
     });
@@ -362,8 +362,8 @@ describe("ChainWeave Integration Tests", function () {
         await result.wait();
       }
 
-      const history = await chainWeave.getUserNFTHistory(user1.address);
-      expect(history.requestIds.length).to.equal(batchSize);
+      const result = await chainWeave.getUserRequestsPaginated(user1.address, 0, 10);
+      expect(result.requestIds.length).to.equal(batchSize);
     });
 
     it("Should provide accurate gas estimates", async function () {
@@ -390,7 +390,9 @@ describe("ChainWeave Integration Tests", function () {
   describe("State Consistency", function () {
     it("Should maintain consistent state across all operations", async function () {
       const { 
+        chainWeave,
         ethMinter,
+        mockGateway,
         owner,
         user1 
       } = await loadFixture(deployIntegrationFixture);
@@ -398,22 +400,54 @@ describe("ChainWeave Integration Tests", function () {
       const initialSupply = await ethMinter.totalSupply();
       const initialBalance = await ethMinter.balanceOf(user1.address);
 
-      // Mint an NFT using owner as the authorized caller
-      const requestId = ethers.utils.keccak256(ethers.utils.toUtf8Bytes("consistency-test"));
+      // Use proper flow through ChainWeave
+      const prompt = "State consistency test";
+      const destinationChainId = 11155111;
+      const recipient = ethers.utils.solidityPack(["address"], [user1.address]);
+      const mintFee = ethers.utils.parseEther("0.01");
+
+      // Request mint
+      const tx = await chainWeave.connect(user1).requestNFTMint(
+        prompt,
+        destinationChainId,
+        recipient,
+        { value: mintFee }
+      );
+
+      const receipt = await tx.wait();
+      const event = receipt.logs.find(log => {
+        try {
+          return chainWeave.interface.parseLog(log).name === "NFTMintRequested";
+        } catch {
+          return false;
+        }
+      });
+
+      const requestId = chainWeave.interface.parseLog(event).args.requestId;
       const tokenURI = "https://api.chainweave.ai/metadata/consistency";
 
+      // Complete AI generation
+      await chainWeave.connect(user1).completeAIGeneration(requestId, tokenURI);
+
+      // For state consistency testing, manually mint to verify the state
+      // Temporarily allow owner to mint for testing
+      await ethMinter.setChainWeaveContract(owner.address);
       await ethMinter.connect(owner).mintFromChainWeave(
         requestId,
         user1.address,
         tokenURI
       );
+      // Reset authorization
+      await ethMinter.setChainWeaveContract(chainWeave.address);
+
+      // Don't simulate callback since we manually minted
 
       // Verify state consistency
       expect(await ethMinter.totalSupply()).to.equal(initialSupply + 1n);
       expect(await ethMinter.balanceOf(user1.address)).to.equal(initialBalance + 1n);
       
-      const tokenId = await ethMinter.requestToTokenId(requestId);
-      expect(await ethMinter.tokenIdToRequest(tokenId)).to.equal(requestId);
+      const tokenId = await ethMinter.requestToToken(requestId);
+      expect(await ethMinter.tokenToRequest(tokenId)).to.equal(requestId);
       expect(await ethMinter.ownerOf(tokenId)).to.equal(user1.address);
       expect(await ethMinter.tokenURI(tokenId)).to.equal(tokenURI);
     });

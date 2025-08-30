@@ -161,7 +161,7 @@ export interface PaginationQuery {
 
 // Request types
 export interface AuthenticatedRequest extends Request {
-  user?: IUser;
+  user?: any; // Will be IUserDocument from mongoose
   walletAddress?: string;
 }
 

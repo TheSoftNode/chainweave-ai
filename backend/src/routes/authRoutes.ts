@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { AuthController } from '@/controllers/AuthController';
 import { validateRequest } from '@/middleware/validation';
 import { body } from 'express-validator';
-import { rateLimitByUser } from '@/middleware/auth';
+import { rateLimitByUser, authenticateUser } from '@/middleware/auth';
 
 const router = Router();
 const authController = new AuthController();
@@ -58,12 +58,14 @@ router.post(
 // Get current user profile
 router.get(
   '/profile',
+  authenticateUser,
   authController.getCurrentUser.bind(authController)
 );
 
 // Refresh token
 router.post(
   '/refresh',
+  authenticateUser,
   rateLimitByUser(20, 60000), // 20 refresh attempts per minute
   authController.refreshToken.bind(authController)
 );
@@ -71,6 +73,7 @@ router.post(
 // Logout (optional - mainly for cleanup)
 router.post(
   '/logout',
+  authenticateUser,
   authController.logout.bind(authController)
 );
 

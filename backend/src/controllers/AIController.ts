@@ -195,7 +195,7 @@ export class AIController {
   /**
    * AI service health check
    */
-  public async healthCheck(req: AuthenticatedRequest, res: Response): Promise<void> {
+  public async healthCheck(_req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const health = await aiService.healthCheck();
 

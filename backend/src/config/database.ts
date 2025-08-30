@@ -9,7 +9,7 @@ interface DatabaseConfig {
 const getDatabaseConfig = (): DatabaseConfig => {
   const uri = process.env['NODE_ENV'] === 'test' 
     ? process.env['MONGODB_TEST_URI'] || 'mongodb://localhost:27017/chainweave-ai-test'
-    : process.env['MONGO_URI'] || 'mongodb://localhost:27017/chainweave-ai';
+    : process.env['MONGODB_URI'] || 'mongodb+srv://zetachain:chainweave@cluster0.nlvi3js.mongodb.net/chainweave?retryWrites=true&w=majority&appName=Cluster0';
 
   const options: mongoose.ConnectOptions = {
     maxPoolSize: 10,

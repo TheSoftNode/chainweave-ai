@@ -1,4 +1,3 @@
-import { Types } from 'mongoose';
 import { NFTRequest, INFTRequestDocument } from '@/models/NFTRequest';
 import { User } from '@/models/User';
 import { blockchainService } from './BlockchainService';
@@ -9,7 +8,6 @@ import {
   NFTRequestBody, 
   ServiceResponse, 
   PaginationQuery,
-  AIGenerationData,
   BlockchainData 
 } from '@/types';
 import { logger } from '@/utils/logger';

@@ -106,8 +106,8 @@ export const validatePagination = (
   next: NextFunction
 ): void => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const page = parseInt(req.query['page'] as string) || 1;
+    const limit = parseInt(req.query['limit'] as string) || 20;
 
     if (page < 1) {
       res.status(400).json({
@@ -126,8 +126,8 @@ export const validatePagination = (
     }
 
     // Attach validated pagination to request
-    req.query.page = page.toString();
-    req.query.limit = limit.toString();
+    req.query['page'] = page.toString();
+    req.query['limit'] = limit.toString();
 
     next();
 
@@ -219,7 +219,7 @@ export const filterContent = (
     }
 
     // Check search queries
-    if (req.query?.query && !checkContent(req.query.query as string)) {
+    if (req.query?.['query'] && !checkContent(req.query['query'] as string)) {
       res.status(400).json({
         success: false,
         error: 'Search query violates community guidelines',

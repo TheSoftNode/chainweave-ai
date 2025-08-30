@@ -1,4 +1,5 @@
-const { ethers } = require("hardhat");
+const { ethers, network } = require("hardhat");
+const { getAddress } = require("@zetachain/toolkit/utils");
 
 /**
  * Deploy ChainWeave Universal Contract on ZetaChain
@@ -9,16 +10,24 @@ async function main() {
   // Get deployer account
   const [deployer] = await ethers.getSigners();
   console.log("Deploying with account:", deployer.address);
-  console.log("Account balance:", ethers.utils.formatEther(await deployer.getBalance()), "ETH");
+  console.log("Account balance:", ethers.formatEther(await ethers.provider.getBalance(deployer.address)), "ETH");
 
-  // ZetaChain Testnet Gateway address
-  const GATEWAY_ADDRESS = "0x6c533f7fe93fae114d0954697069df33c9b74fd7";
+  // Get the appropriate Gateway address for the network
+  let gatewayAddress;
+  try {
+    gatewayAddress = getAddress("gateway", network.name);
+    console.log("Using Gateway address from toolkit:", gatewayAddress);
+  } catch (error) {
+    console.log("Gateway address not found for network, using default ZetaChain testnet");
+    // Default ZetaChain Testnet Gateway address
+    gatewayAddress = "0x6c533f7fe93fae114d0954697069df33c9b74fd7";
+  }
 
   try {
     // Deploy ChainWeave contract
     console.log("\n📄 Deploying ChainWeave contract...");
     const ChainWeave = await ethers.getContractFactory("ChainWeave");
-    const chainWeave = await ChainWeave.deploy(GATEWAY_ADDRESS);
+    const chainWeave = await ChainWeave.deploy(gatewayAddress, deployer.address);
     
     await chainWeave.waitForDeployment();
     const chainWeaveAddress = await chainWeave.getAddress();
@@ -60,20 +69,27 @@ async function main() {
 
     // Verify deployment
     console.log("\n🔍 Verifying deployment...");
-    const code = await deployer.provider.getCode(chainWeaveAddress);
+    const code = await ethers.provider.getCode(chainWeaveAddress);
     if (code === "0x") {
       throw new Error("Contract deployment failed - no code at address");
     }
     console.log("✅ Contract deployment verified");
 
+    // Verify contract initialization
+    console.log("\n🔍 Verifying contract initialization...");
+    const owner = await chainWeave.owner();
+    const gateway = await chainWeave.gateway();
+    console.log("Contract Owner:", owner);
+    console.log("Gateway Address:", gateway);
+
     // Display summary
     console.log("\n📋 Deployment Summary:");
     console.log("=====================");
-    console.log("Network:", (await deployer.provider.getNetwork()).name);
+    console.log("Network:", network.name);
     console.log("ChainWeave Address:", chainWeaveAddress);
-    console.log("Gateway Address:", GATEWAY_ADDRESS);
+    console.log("Gateway Address:", gatewayAddress);
     console.log("Deployer:", deployer.address);
-    console.log("Gas Used: ~2,500,000 gas");
+    console.log("Owner:", owner);
 
     console.log("\n📝 Next Steps:");
     console.log("1. Deploy CrossChainMinter contracts on destination chains");
@@ -83,16 +99,19 @@ async function main() {
 
     // Save deployment info
     const deploymentInfo = {
-      network: (await deployer.provider.getNetwork()).name,
+      network: network.name,
       chainWeave: chainWeaveAddress,
-      gateway: GATEWAY_ADDRESS,
+      gateway: gatewayAddress,
       deployer: deployer.address,
+      owner: owner,
       timestamp: new Date().toISOString(),
       supportedChains: chainConfigs
     };
 
     console.log("\n💾 Deployment info saved for frontend integration");
     console.log(JSON.stringify(deploymentInfo, null, 2));
+
+    return chainWeaveAddress;
 
   } catch (error) {
     console.error("\n❌ Deployment failed:", error.message);
@@ -104,12 +123,16 @@ async function main() {
 }
 
 // Handle deployment
-main()
-  .then(() => {
-    console.log("\n🎉 ChainWeave deployment completed successfully!");
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.error("\n💥 Deployment script failed:", error);
-    process.exit(1);
-  });
+if (require.main === module) {
+  main()
+    .then(() => {
+      console.log("\n🎉 ChainWeave deployment completed successfully!");
+      process.exit(0);
+    })
+    .catch((error) => {
+      console.error("\n💥 Deployment script failed:", error);
+      process.exit(1);
+    });
+}
+
+module.exports = main;

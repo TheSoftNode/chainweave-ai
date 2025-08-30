@@ -1,0 +1,36 @@
+# Cloud Build configuration for ChainWeave AI Backend
+steps:
+  # Install dependencies
+  - name: 'node:20'
+    entrypoint: 'npm'
+    args: ['ci']
+    env:
+      - 'NODE_ENV=production'
+
+  # Run TypeScript build
+  - name: 'node:20'
+    entrypoint: 'npm'
+    args: ['run', 'build']
+    env:
+      - 'NODE_ENV=production'
+
+  # Run tests (optional, uncomment if needed)
+  # - name: 'node:20'
+  #   entrypoint: 'npm'
+  #   args: ['test']
+
+  # Deploy to App Engine
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args: ['app', 'deploy', 'app.yaml', '--quiet']
+
+# Timeout for the build
+timeout: '1200s'
+
+# Substitute environment variables
+substitutions:
+  _SERVICE_NAME: chainweave-ai-backend
+
+# Options
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'

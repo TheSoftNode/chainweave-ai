@@ -5,14 +5,12 @@
  * Tests the complete AI workflow: Authentication → AI Generation → Smart Contract Integration
  */
 
-import { config } from '@/config/env';
-import { connectDatabase } from '@/config/database';
 import { aiService } from '@/services/AIService';
 import { nftRequestService } from '@/services/NFTRequestService';
 import { userService } from '@/services/UserService';
 import { blockchainService } from '@/services/BlockchainService';
 import { ipfsService } from '@/services/IPFSService';
-import { logger } from '@/utils/logger';
+import { connectToDatabase } from '@/config/database';
 
 async function testCompleteWorkflow() {
   console.log('\n🚀 Starting ChainWeave AI Integration Test\n');
@@ -20,7 +18,7 @@ async function testCompleteWorkflow() {
   try {
     // 1. Test Database Connection
     console.log('1️⃣  Testing Database Connection...');
-    await connectDatabase();
+    await connectToDatabase();
     console.log('✅ Database connected successfully\n');
 
     // 2. Test AI Services Health

@@ -1,7 +1,7 @@
 import cors from 'cors';
-import { env } from '@/config/env';
+import { config } from '@/config/env';
 
-const allowedOrigins = env.ALLOWED_ORIGINS?.split(',') || [
+const allowedOrigins = config.cors.origin || [
   'http://localhost:3000',
   'http://localhost:3001', 
   'https://chainweave.vercel.app',

@@ -18,13 +18,20 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "forge test",
-    "build": "forge build",
+    "test": "npx hardhat test",
+    "compile": "npx hardhat compile",
+    "build": "npx hardhat compile",
     "lint:fix": "npx eslint . --ext .js,.ts --fix",
     "lint": "npx eslint . --ext .js,.ts",
-    "deploy:localnet": "npx hardhat compile --force && npx tsx commands/deploy.ts --rpc http://localhost:8545 --private-key $(jq -r '.private_keys[0]' ~/.zetachain/localnet/anvil.json) --gateway $(jq -r '.\"31337\".contracts[] | select(.contractType == \"gateway\") | .address' ~/.zetachain/localnet/registry.json)",
-    "deploy:testnet": "npx tsx commands/deploy.ts --private-key $PRIVATE_KEY",
-    "clean": "forge clean && npx hardhat clean"
+    "clean": "npx hardhat clean",
+    "deploy:testnet": "npx hardhat run scripts/deploy_hello_pattern.js --network zetachain_athens",
+    "deploy:minter:eth": "npx hardhat run scripts/deploy_CrossChainMinter.js --network eth_sepolia",
+    "deploy:minter:base": "npx hardhat run scripts/deploy_CrossChainMinter.js --network base_sepolia",
+    "deploy:minter:bsc": "npx hardhat run scripts/deploy_CrossChainMinter.js --network bsc_testnet",
+    "deploy:minter:polygon": "npx hardhat run scripts/deploy_CrossChainMinter.js --network polygon_amoy",
+    "configure:testnet": "npx hardhat run scripts/configure_minters.js --network zetachain_athens",
+    "deploy:full": "npx hardhat run scripts/deploy_full.js",
+    "verify:deployment": "npx hardhat run scripts/verify_deployment.js"
   },
   "keywords": [
     "zetachain",

@@ -1,5 +1,5 @@
-const { ethers } = require("hardhat");
-const { getAddress } = require("ethers");
+const { ethers, network } = require("hardhat");
+const { getAddress } = require("@zetachain/toolkit/utils");
 
 /**
  * Deploy CrossChainMinter contracts on external chains
@@ -10,21 +10,30 @@ async function main() {
   // Get deployer account
   const [deployer] = await ethers.getSigners();
   console.log("Deploying with account:", deployer.address);
-  console.log("Account balance:", ethers.formatEther(await deployer.provider.getBalance(deployer.address)), "ETH");
+  console.log("Account balance:", ethers.utils.formatEther(await ethers.provider.getBalance(deployer.address)), "ETH");
 
   // Get network information
-  const network = await deployer.provider.getNetwork();
-  const chainId = Number(network.chainId);
+  const networkInfo = await ethers.provider.getNetwork();
+  const chainId = Number(networkInfo.chainId);
   console.log("Network:", network.name);
   console.log("Chain ID:", chainId);
 
-  // Gateway addresses for different chains
-  const gatewayAddresses = {
-    11155111: "0x6c533f7fe93fae114d0954697069df33c9b74fd7", // Ethereum Sepolia
-    84532: "0x6c533f7fe93fae114d0954697069df33c9b74fd7",   // Base Sepolia
-    97: "0x6c533f7fe93fae114d0954697069df33c9b74fd7",      // BSC Testnet
-    80002: "0x6c533f7fe93fae114d0954697069df33c9b74fd7"    // Polygon Amoy
-  };
+  // Get the appropriate Gateway address for the network
+  let gatewayAddress;
+  try {
+    gatewayAddress = getAddress("gatewayEvm", network.name);
+    console.log("Using Gateway address from toolkit:", gatewayAddress);
+  } catch (error) {
+    console.log("Gateway address not found for network, using fallback addresses");
+    // Fallback Gateway addresses for different chains
+    const gatewayAddresses = {
+      11155111: "0x6c533f7fe93fae114d0954697069df33c9b74fd7", // Ethereum Sepolia
+      84532: "0x6c533f7fe93fae114d0954697069df33c9b74fd7",   // Base Sepolia
+      97: "0x6c533f7fe93fae114d0954697069df33c9b74fd7",      // BSC Testnet
+      80002: "0x6c533f7fe93fae114d0954697069df33c9b74fd7"    // Polygon Amoy
+    };
+    gatewayAddress = gatewayAddresses[chainId];
+  }
 
   // Chain-specific collection names
   const collectionConfigs = {
@@ -51,14 +60,17 @@ async function main() {
   };
 
   // Validate chain support
-  if (!gatewayAddresses[chainId]) {
+  if (!gatewayAddress) {
     console.error(`❌ Unsupported chain ID: ${chainId}`);
-    console.log("Supported chains:", Object.keys(gatewayAddresses));
+    console.log("Supported chains:", Object.keys(collectionConfigs));
     process.exit(1);
   }
 
-  const gatewayAddress = gatewayAddresses[chainId];
   const collectionConfig = collectionConfigs[chainId];
+  if (!collectionConfig) {
+    console.error(`❌ No collection config for chain ID: ${chainId}`);
+    process.exit(1);
+  }
 
   // ChainWeave contract address on ZetaChain (update after ZetaChain deployment)
   const CHAINWEAVE_ADDRESS = process.env.CHAINWEAVE_ADDRESS || "0x0000000000000000000000000000000000000000";
@@ -79,27 +91,17 @@ async function main() {
       collectionConfig.symbol
     );
 
-    await crossChainMinter.waitForDeployment();
-    const minterAddress = await crossChainMinter.getAddress();
+    await crossChainMinter.deployed();
+    const minterAddress = crossChainMinter.address;
     
     console.log("✅ CrossChainMinter deployed to:", minterAddress);
 
-    // Set initial configuration
-    console.log("\n⚙️ Configuring CrossChainMinter...");
-    
-    // Set base URI (can be updated later)
-    const baseURI = "https://api.chainweave.ai/metadata/";
-    await crossChainMinter.setBaseURI(baseURI);
-    console.log("✅ Base URI set:", baseURI);
-
-    // Set contract URI for OpenSea compatibility
-    const contractURI = `https://api.chainweave.ai/contract-metadata/${chainId}`;
-    await crossChainMinter.setContractURI(contractURI);
-    console.log("✅ Contract URI set:", contractURI);
+    // Contract is ready to use - no additional configuration needed
+    console.log("\n⚙️ Contract deployed and ready to use...");
 
     // Verify deployment
     console.log("\n🔍 Verifying deployment...");
-    const code = await deployer.provider.getCode(minterAddress);
+    const code = await ethers.provider.getCode(minterAddress);
     if (code === "0x") {
       throw new Error("Contract deployment failed - no code at address");
     }
@@ -108,11 +110,15 @@ async function main() {
     const name = await crossChainMinter.name();
     const symbol = await crossChainMinter.symbol();
     const owner = await crossChainMinter.owner();
+    const gateway = await crossChainMinter.gateway();
+    const chainWeave = await crossChainMinter.chainWeave();
     
     console.log("✅ Contract deployment verified");
     console.log("  - Name:", name);
     console.log("  - Symbol:", symbol);  
     console.log("  - Owner:", owner);
+    console.log("  - Gateway:", gateway);
+    console.log("  - ChainWeave:", chainWeave);
 
     // Display summary
     console.log("\n📋 Deployment Summary:");
@@ -141,6 +147,7 @@ async function main() {
       chainWeave: CHAINWEAVE_ADDRESS,
       collection: collectionConfig,
       deployer: deployer.address,
+      owner: owner,
       timestamp: new Date().toISOString()
     };
 
@@ -150,6 +157,8 @@ async function main() {
     // Generate setChainMinter call data for ChainWeave
     console.log("\n🔧 ChainWeave configuration call:");
     console.log(`setChainMinter(${chainId}, "${minterAddress}")`);
+
+    return minterAddress;
 
   } catch (error) {
     console.error("\n❌ Deployment failed:", error.message);
@@ -161,12 +170,16 @@ async function main() {
 }
 
 // Handle deployment
-main()
-  .then(() => {
-    console.log("\n🎉 CrossChainMinter deployment completed successfully!");
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.error("\n💥 Deployment script failed:", error);
-    process.exit(1);
-  });
+if (require.main === module) {
+  main()
+    .then(() => {
+      console.log("\n🎉 CrossChainMinter deployment completed successfully!");
+      process.exit(0);
+    })
+    .catch((error) => {
+      console.error("\n💥 Deployment script failed:", error);
+      process.exit(1);
+    });
+}
+
+module.exports = main;

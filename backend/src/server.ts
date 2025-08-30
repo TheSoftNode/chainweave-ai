@@ -6,7 +6,7 @@ import { generalLimiter } from '@/middleware/rateLimiter';
 import { sanitizeInput, limitRequestSize } from '@/middleware/validation';
 import { apiRoutes } from '@/routes';
 import { connectToDatabase } from '@/config/database';
-import { env } from '@/config/env';
+import { config } from '@/config/env';
 import { logger, performanceLogger } from '@/utils/logger';
 import { ApiResponse } from '@/types';
 
@@ -80,19 +80,19 @@ app.use((req, res, next) => {
 app.use('/api/v1', apiRoutes);
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.json({
     success: true,
     message: 'ChainWeave AI Backend is healthy',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     version: '1.0.0',
-    environment: env.NODE_ENV,
+    environment: config.env,
   });
 });
 
 // Root endpoint
-app.get('/', (req, res) => {
+app.get('/', (_req, res) => {
   res.json({
     success: true,
     message: 'ChainWeave AI Backend API',
@@ -112,7 +112,7 @@ app.use('*', (req, res) => {
 });
 
 // Global error handler
-app.use((error: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((error: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   logger.error('Unhandled error', {
     error: error.message,
     stack: error.stack,
@@ -121,7 +121,7 @@ app.use((error: any, req: express.Request, res: express.Response, next: express.
   });
 
   // Don't leak error details in production
-  const errorMessage = env.NODE_ENV === 'production' 
+  const errorMessage = config.env === 'production' 
     ? 'Internal server error' 
     : error.message;
 
@@ -132,10 +132,10 @@ app.use((error: any, req: express.Request, res: express.Response, next: express.
 });
 
 // Graceful shutdown handler
-const gracefulShutdown = (signal: string) => {
+const gracefulShutdown = (signal: string, serverInstance: any) => {
   logger.info(`Received ${signal}. Starting graceful shutdown...`);
   
-  server.close((err) => {
+  serverInstance.close((err: any) => {
     if (err) {
       logger.error('Error during graceful shutdown', { error: err.message });
       process.exit(1);
@@ -160,16 +160,16 @@ const startServer = async () => {
     logger.info('Database connected successfully');
 
     // Start server
-    const server = app.listen(env.PORT, () => {
-      logger.info(`ChainWeave AI Backend running on port ${env.PORT}`, {
-        environment: env.NODE_ENV,
-        port: env.PORT,
+    const server = app.listen(config.port, () => {
+      logger.info(`ChainWeave AI Backend running on port ${config.port}`, {
+        environment: config.env,
+        port: config.port,
       });
     });
 
     // Handle graceful shutdown
-    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM', server));
+    process.on('SIGINT', () => gracefulShutdown('SIGINT', server));
 
     return server;
 

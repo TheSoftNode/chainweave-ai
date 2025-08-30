@@ -1,9 +1,9 @@
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { User } from '@/models/User';
+import { User} from '@/models/User';
 import { AuthenticatedRequest } from '@/types';
 import { logger } from '@/utils/logger';
-import { env } from '@/config/env';
+import { config } from '@/config/env';
 
 export interface JWTPayload {
   walletAddress: string;
@@ -34,7 +34,7 @@ export const authenticateUser = async (
     }
 
     // Verify token
-    const decoded = jwt.verify(token, env.JWT_SECRET) as JWTPayload;
+    const decoded = jwt.verify(token, config.jwt.secret) as JWTPayload;
 
     // Get user from database
     const user = await User.findByWallet(decoded.walletAddress);
@@ -58,7 +58,7 @@ export const authenticateUser = async (
     await user.updateLastActivity();
 
     // Attach user to request
-    req.user = user;
+    req.user = user as any;
     next();
 
   } catch (error) {
@@ -95,7 +95,7 @@ export const generateToken = (walletAddress: string, userId: string): string => 
     userId,
   };
 
-  return jwt.sign(payload, env.JWT_SECRET, {
+  return jwt.sign(payload, config.jwt.secret, {
     expiresIn: '7d', // 7 days
   });
 };
@@ -106,7 +106,7 @@ export const generateToken = (walletAddress: string, userId: string): string => 
  */
 export const optionalAuth = async (
   req: AuthenticatedRequest,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
@@ -115,12 +115,12 @@ export const optionalAuth = async (
 
     if (token) {
       try {
-        const decoded = jwt.verify(token, env.JWT_SECRET) as JWTPayload;
+        const decoded = jwt.verify(token, config.jwt.secret) as JWTPayload;
         const user = await User.findByWallet(decoded.walletAddress);
         
         if (user && user.isActive) {
           await user.updateLastActivity();
-          req.user = user;
+          req.user = user as any;
         }
       } catch (error) {
         // Ignore token errors for optional auth
@@ -157,7 +157,7 @@ export const requireAdmin = async (
 
     // Check if user is admin (would need admin field in User model)
     // For now, we'll use a simple check based on wallet address
-    const adminWallets = (env.ADMIN_WALLETS || '').split(',').map(w => w.toLowerCase());
+    const adminWallets = config.admin.wallets.map((w: string) => w.toLowerCase());
     const isAdmin = adminWallets.includes(req.user.walletAddress.toLowerCase());
 
     if (!isAdmin) {
