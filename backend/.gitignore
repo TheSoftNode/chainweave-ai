@@ -48,12 +48,28 @@ web_modules/
 # Yarn Integrity file
 .yarn-integrity
 
-# dotenv environment variables file
+# Environment files - NEVER COMMIT THESE!
+.env*
 .env
+.env.*
 .env.local
+.env.development
 .env.development.local
+.env.test
 .env.test.local
+.env.production
 .env.production.local
+.env.staging
+.env.example
+
+# API Keys and Secrets - CRITICAL SECURITY
+*.key
+*.pem
+*.p12
+*.pfx
+config/secrets.json
+secrets/
+credentials/
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache

@@ -1,0 +1,76 @@
+# ChainWeave AI - Root .gitignore
+# This applies to the entire project
+
+# Environment files - NEVER COMMIT THESE!
+.env*
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env.staging
+.env.example
+
+# API Keys and Secrets
+*.key
+*.pem
+config/secrets.json
+secrets/
+credentials/
+
+# Node modules
+node_modules/
+*/node_modules/
+
+# Build outputs
+dist/
+build/
+out/
+artifacts/
+cache/
+cache_forge/
+
+# Logs
+*.log
+logs/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Package manager files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Dependencies
+jspm_packages/
+
+# Coverage
+coverage/
+*.lcov
+.nyc_output
+
+# TypeScript
+*.tsbuildinfo
+
+# Uploads
+uploads/
+public/uploads/
